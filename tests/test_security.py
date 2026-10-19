@@ -131,3 +131,17 @@ def test_audit_chain_detects_modified_event(env):
         event.detail = "tampered after the fact"
         db.commit()
         assert verify_audit_chain(db) is False
+def test_unauthenticated_requests_are_rejected(env):
+    client = TestClient(app)
+
+    assert client.get("/api/me").status_code == 401
+    assert client.get("/api/documents").status_code == 401
+    assert client.get("/api/admin/audit").status_code == 401
+
+    owner = env["clients"]["owner@example.com"]
+    doc = upload(owner).json()
+
+    response = client.get(
+        f"/api/documents/{doc['id']}/download"
+    )
+    assert response.status_code == 401
