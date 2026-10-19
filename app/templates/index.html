@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TrustVault</title>
+<style>
+:root{font-family:Inter,system-ui,Arial,sans-serif;color:#182230;background:#f4f7fb}*{box-sizing:border-box}body{margin:0}.top{background:#12233f;color:white;padding:18px 5%;display:flex;justify-content:space-between;align-items:center}.brand{font-size:22px;font-weight:800}.muted{color:#65758b}.wrap{max-width:1120px;margin:26px auto;padding:0 18px}.card{background:white;border:1px solid #e0e7f0;border-radius:14px;padding:20px;margin-bottom:18px;box-shadow:0 4px 18px #172b4d0a}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(270px,1fr));gap:16px}input,select,textarea,button{font:inherit;padding:10px;border:1px solid #cbd5e1;border-radius:8px;width:100%;margin:5px 0}button{background:#176b52;color:white;border:0;font-weight:700;cursor:pointer}button.secondary{background:#e9eff6;color:#24364b}button.danger{background:#a83232}.row{display:flex;gap:8px;align-items:center}.row>*{flex:1}table{width:100%;border-collapse:collapse}td,th{text-align:left;padding:10px;border-bottom:1px solid #e8edf3;font-size:14px}pre{white-space:pre-wrap;overflow-wrap:anywhere}.hidden{display:none}.pill{display:inline-block;padding:4px 8px;background:#e9f7f0;color:#176b52;border-radius:99px;font-size:12px}.error{color:#a83232}.small{font-size:13px}@media(max-width:600px){.row{display:block}td,th{padding:7px}}
+</style></head>
+<body><header class="top"><div><div class="brand">🔐 TrustVault</div><div class="small">Secure document sharing with an audit trail</div></div><div id="who" class="small">Not signed in</div></header>
+<div class="wrap">
+<div id="notice" class="card hidden"></div>
+<section id="login" class="card" style="max-width:460px;margin:40px auto"><h2>Sign in</h2><p class="muted">Access is checked by the server for every document request.</p><form id="loginForm"><label>Email</label><input id="email" type="email" autocomplete="username" required><label>Password</label><input id="password" type="password" autocomplete="current-password" required><button>Sign in</button></form><p class="small muted">Development seed admin credentials are documented in README.md. Change them before deployment.</p></section>
+<div id="app" class="hidden">
+<div class="grid">
+<section class="card"><h3>Upload document</h3><form id="uploadForm"><label>Title</label><input name="title" maxlength="200" required><label>Category</label><input name="category" maxlength="80" placeholder="Contract, HR, Finance..." required><label>Description</label><textarea name="description" maxlength="1000"></textarea><label>File (PDF, TXT, CSV, PNG, JPG; max {{ max_upload_mb }} MB)</label><input name="file" type="file" accept=".pdf,.txt,.csv,.png,.jpg,.jpeg" required><button>Upload securely</button></form></section>
+<section class="card"><h3>Search documents</h3><form id="searchForm"><label>Name or description</label><input id="q" placeholder="Search..."/><label>Owner email</label><input id="owner" placeholder="owner@example.com"/><label>Category</label><input id="category" placeholder="HR"/><div class="row"><div><label>From date</label><input id="dateFrom" type="date"></div><div><label>To date</label><input id="dateTo" type="date"></div></div><button>Search</button><button class="secondary" type="button" id="clearSearch">Clear filters</button></form></section>
+</div>
+<section class="card"><div class="row"><div><h3>Documents you can access</h3><p class="muted small">A document appears only if the server confirms you can read it.</p></div><button class="secondary" id="refresh" style="max-width:150px">Refresh</button></div><div style="overflow:auto"><table><thead><tr><th>Document</th><th>Owner</th><th>Category</th><th>Size</th><th>Actions</th></tr></thead><tbody id="docs"></tbody></table></div></section>
+<section id="adminPanel" class="card hidden"><div class="row"><div><h3>Administrator activity</h3><p class="muted small">Audit entries include denied requests. The chain is HMAC-verified.</p></div><button id="verifyAudit" class="secondary" style="max-width:170px">Verify audit chain</button></div><div id="summary"></div><div style="overflow:auto"><table><thead><tr><th>Time</th><th>Actor</th><th>Action</th><th>Document</th><th>Outcome</th><th>Details</th></tr></thead><tbody id="audit"></tbody></table></div></section>
+<section id="userAdmin" class="card hidden"><h3>Create user</h3><form id="createUserForm"><div class="row"><input name="email" type="email" placeholder="Email" required><input name="display_name" placeholder="Display name" required></div><div class="row"><input name="password" type="password" minlength="12" placeholder="Temporary password (12+ chars)" required><select name="role"><option value="owner">Document Owner</option><option value="viewer">Viewer</option><option value="admin">Administrator</option></select></div><button>Create user</button></form></section>
+<button class="danger" id="logout" style="max-width:150px">Sign out</button>
+</div></div>
+<script>
+const $=id=>document.getElementById(id);let currentUser=null;
+function notice(msg,error=false){$('notice').textContent=msg;$('notice').classList.remove('hidden');$('notice').classList.toggle('error',error);window.scrollTo({top:0,behavior:'smooth'});}
+
+async function api(url, options = {}) {
+  options.credentials = 'same-origin';
+  options.headers = options.headers || {};
+
+  if (options.body && !(options.body instanceof FormData)) {
+    options.headers['Content-Type'] = 'application/json';
+  }
+
+  const r = await fetch(url, options);
+  const raw = await r.text();
+
+  let body;
+  try {
+    body = raw ? JSON.parse(raw) : null;
+  } catch {
+    body = raw;
+  }
+
+  if (!r.ok) {
+    if (r.status === 401) {
+      showLoggedOut();
+    }
+
+    const detail =
+      body && typeof body === 'object'
+        ? (body.detail ?? body.message ?? body)
+        : body;
+
+    let message;
+
+    if (Array.isArray(detail)) {
+      message = detail.map(item => {
+        if (typeof item === 'string') return item;
+
+        if (item && typeof item === 'object') {
+          const loc = Array.isArray(item.loc)
+            ? item.loc.join('.')
+            : '';
+          const msg = item.msg || JSON.stringify(item);
+          return loc ? `${loc}: ${msg}` : msg;
+        }
+
+        return String(item);
+      }).join('; ');
+    } else if (typeof detail === 'string') {
+      message = detail;
+    } else if (detail && typeof detail === 'object') {
+      message = JSON.stringify(detail);
+    } else {
+      message = `Request failed (${r.status})`;
+    }
+
+    throw new Error(message || `Request failed (${r.status})`);
+  }
+
+  return body;
+}
+
+function showLoggedIn(user){currentUser=user;$('login').classList.add('hidden');$('app').classList.remove('hidden');$('who').textContent=`${user.display_name} · ${user.role}`;$('uploadForm').closest('.card').classList.toggle('hidden',user.role==='viewer');$('adminPanel').classList.toggle('hidden',user.role!=='admin');$('userAdmin').classList.toggle('hidden',user.role!=='admin');loadDocs();if(user.role==='admin')loadAdmin()}
+$('loginForm').addEventListener('submit',async e=>{e.preventDefault();try{const u=await api('/api/auth/login',{method:'POST',body:JSON.stringify({email:$('email').value,password:$('password').value})});showLoggedIn(u);notice('Signed in successfully.')}catch(err){notice(err.message,true)}});
+$('logout').onclick=async()=>{try{await api('/api/auth/logout',{method:'POST'});}catch{}showLoggedOut();notice('Signed out. The server-side session has been revoked.');};
+async function loadDocs(filters={}){try{const p=new URLSearchParams(filters);const docs=await api('/api/documents?'+p.toString());$('docs').innerHTML='';for(const d of docs){const tr=document.createElement('tr');const name=document.createElement('td');name.textContent=d.title+'\n'+d.original_filename;const owner=document.createElement('td');owner.textContent=d.owner_email;const cat=document.createElement('td');cat.textContent=d.category;const size=document.createElement('td');size.textContent=(d.size_bytes/1024).toFixed(1)+' KB';const actions=document.createElement('td');const dl=document.createElement('button');dl.textContent='Download';dl.onclick=()=>window.location.href=`/api/documents/${d.id}/download`;actions.append(dl);if(currentUser&&(currentUser.role==='admin'||currentUser.id===d.owner_id)){const edit=document.createElement('button');edit.className='secondary';edit.textContent='Edit details';edit.onclick=async()=>{const title=prompt('New title',d.title);if(title===null)return;const category=prompt('Category',d.category);if(category===null)return;const description=prompt('Description',d.description||'')||'';try{await api(`/api/documents/${d.id}`,{method:'PATCH',body:JSON.stringify({title,category,description})});notice('Document updated.');loadDocs(filters)}catch(e){notice(e.message,true)}};actions.append(edit);const share=document.createElement('button');share.className='secondary';share.textContent='Share';share.onclick=()=>shareDoc(d);actions.append(share);const del=document.createElement('button');del.className='danger';del.textContent='Delete';del.onclick=async()=>{if(!confirm('Delete this document?'))return;try{await api(`/api/documents/${d.id}`,{method:'DELETE'});notice('Document deleted.');loadDocs(filters)}catch(e){notice(e.message,true)}};actions.append(del)}tr.append(name,owner,cat,size,actions);$('docs').append(tr)}}catch(e){notice(e.message,true)}}
+async function shareDoc(d){try{const action=(prompt('Type grant to share access, or revoke to remove access','grant')||'').toLowerCase();if(action==='revoke'){const grants=await api(`/api/documents/${d.id}/grants`);if(!grants.length)return notice('No active grants for this document.');const list=grants.map(g=>`${g.user_id}: ${g.display_name} (${g.email}) — ${g.permission}`).join('\n');const id=prompt('Enter the user ID to revoke:\n'+list);if(!id)return;await api(`/api/documents/${d.id}/grants/${Number(id)}`,{method:'DELETE'});notice('Access revoked. Subsequent requests will be denied.');return}if(action!=='grant')return notice('Choose grant or revoke.',true);const users=await api('/api/users');const candidates=users.filter(u=>u.id!==d.owner_id);const list=candidates.map(u=>`${u.id}: ${u.display_name} (${u.email})`).join('\n');const id=prompt('Enter the ID of the named user to share with:\n'+list);if(!id)return;const permission=prompt('Permission: read or edit','read');if(!['read','edit'].includes(permission))return notice('Permission must be read or edit.',true);await api(`/api/documents/${d.id}/grants`,{method:'PUT',body:JSON.stringify({user_id:Number(id),permission})});notice('Access granted and recorded in the audit trail.');}catch(e){notice(e.message,true)}}
+$('uploadForm').addEventListener('submit',async e=>{e.preventDefault();try{const fd=new FormData(e.target);await api('/api/documents',{method:'POST',body:fd});e.target.reset();notice('Document uploaded securely.');loadDocs()}catch(err){notice(err.message,true)}});
+$('searchForm').addEventListener('submit',e=>{e.preventDefault();const f={};if($('q').value)f.q=$('q').value;if($('owner').value)f.owner=$('owner').value;if($('category').value)f.category=$('category').value;if($('dateFrom').value)f.date_from=$('dateFrom').value;if($('dateTo').value)f.date_to=$('dateTo').value;loadDocs(f)});$('clearSearch').onclick=()=>{$('searchForm').reset();loadDocs()};$('refresh').onclick=()=>loadDocs();
+async function loadAdmin(){try{const s=await api('/api/admin/summary');$('summary').textContent=`Users: ${s.users} · Active documents: ${s.active_documents} · Denied events: ${s.denied_events} · Permission changes: ${s.permission_changes} · Audit chain: ${s.audit_chain_valid?'VALID':'INVALID'}`;const events=await api('/api/admin/audit?limit=100');$('audit').innerHTML='';for(const e of events){const tr=document.createElement('tr');[e.at,e.actor_email,e.action,e.document_id??'—',e.outcome,e.detail].forEach(v=>{const td=document.createElement('td');td.textContent=v;tr.append(td)});$('audit').append(tr)}}catch(e){notice(e.message,true)}}
+$('verifyAudit').onclick=async()=>{try{const v=await api('/api/admin/audit/verify');notice(v.message);loadAdmin()}catch(e){notice(e.message,true)}};
+$('createUserForm').addEventListener('submit',async e=>{e.preventDefault();const f=new FormData(e.target);try{await api('/api/admin/users',{method:'POST',body:JSON.stringify(Object.fromEntries(f))});e.target.reset();notice('User created.');}catch(err){notice(err.message,true)}});
+(async()=>{try{const u=await api('/api/me');showLoggedIn(u)}catch{showLoggedOut()}})();
+</script></body></html>

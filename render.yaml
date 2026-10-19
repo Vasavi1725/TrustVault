@@ -1,0 +1,27 @@
+services:
+  - type: web
+    name: trustvault
+    runtime: docker
+    plan: starter
+    healthCheckPath: /health
+    envVars:
+      - key: ENVIRONMENT
+        value: production
+      - key: DATABASE_URL
+        sync: false
+      - key: AUDIT_HMAC_KEY
+        generateValue: true
+      - key: SESSION_SECRET
+        generateValue: true
+      - key: SESSION_COOKIE_SECURE
+        value: "true"
+      - key: BOOTSTRAP_ADMIN_EMAIL
+        value: admin@example.com
+      - key: BOOTSTRAP_ADMIN_PASSWORD
+        sync: false
+      - key: STORAGE_DIR
+        value: /var/data/private_uploads
+    disk:
+      name: trustvault-files
+      mountPath: /var/data
+      sizeGB: 1
