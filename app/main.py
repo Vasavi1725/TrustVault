@@ -36,6 +36,19 @@ if DATABASE_URL.startswith("postgres://"):
     DATABASE_URL = "postgresql+psycopg://" + DATABASE_URL[len("postgres://"):]
 elif DATABASE_URL.startswith("postgresql://"):
     DATABASE_URL = "postgresql+psycopg://" + DATABASE_URL[len("postgresql://"): ]
+
+# Production must use an external PostgreSQL database. SQLite remains suitable
+# for local development and isolated tests, but must not be used accidentally in
+# a deployed production service where its local filesystem may be ephemeral.
+if (
+    os.getenv("ENVIRONMENT", "development").lower() == "production"
+    and DATABASE_URL.startswith("sqlite")
+):
+    raise RuntimeError(
+        "Production requires PostgreSQL through DATABASE_URL. "
+        "SQLite is allowed only for local development and testing."
+    )
+
 AUDIT_KEY = os.getenv("AUDIT_HMAC_KEY", "development-only-change-this-secret-please")
 if os.getenv("ENVIRONMENT", "development") == "production":
     if len(AUDIT_KEY) < 32 or "development-only" in AUDIT_KEY:

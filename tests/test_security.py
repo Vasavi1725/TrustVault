@@ -1,5 +1,8 @@
 
 import hashlib
+import os
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -70,9 +73,11 @@ def upload(client, title="Confidential contract"):
 def test_unauthorized_user_cannot_list_or_download_private_document(env):
     owner = env["clients"]["owner@example.com"]
     viewer = env["clients"]["viewer@example.com"]
+
     r = upload(owner)
     assert r.status_code == 201, r.text
     doc_id = r.json()["id"]
+
     assert viewer.get("/api/documents").json() == []
     assert viewer.get(f"/api/documents/{doc_id}").status_code == 403
     assert viewer.get(f"/api/documents/{doc_id}/download").status_code == 403
@@ -82,8 +87,8 @@ def test_grant_and_revoke_takes_effect_immediately(env):
     owner = env["clients"]["owner@example.com"]
     viewer = env["clients"]["viewer@example.com"]
     viewer_id = env["ids"]["viewer@example.com"]
-    doc = upload(owner).json()
 
+    doc = upload(owner).json()
     grant = owner.put(
         f"/api/documents/{doc['id']}/grants",
         json={"user_id": viewer_id, "permission": "read"},
@@ -103,10 +108,7 @@ def test_read_grant_does_not_allow_edit_or_delete(env):
 
     grant = owner.put(
         f"/api/documents/{doc['id']}/grants",
-        json={
-            "user_id": env["ids"]["viewer@example.com"],
-            "permission": "read",
-        },
+        json={"user_id": env["ids"]["viewer@example.com"], "permission": "read"},
     )
     assert grant.status_code == 200, grant.text
 
@@ -124,10 +126,7 @@ def test_non_owner_cannot_grant_access(env):
 
     response = other.put(
         f"/api/documents/{doc['id']}/grants",
-        json={
-            "user_id": env["ids"]["viewer@example.com"],
-            "permission": "read",
-        },
+        json={"user_id": env["ids"]["viewer@example.com"], "permission": "read"},
     )
     assert response.status_code == 403
 
@@ -237,7 +236,7 @@ def test_edit_grant_allows_update_but_not_delete(env):
     )
     assert update.status_code == 200, update.text
 
-    # Editors can update details but cannot delete another user's document.
+    # Editors can update metadata but cannot delete another user's document.
     delete = viewer.delete(f"/api/documents/{document_id}")
     assert delete.status_code == 403
 
@@ -248,23 +247,19 @@ def test_denied_delete_is_recorded_in_audit_trail(env):
     admin = env["clients"]["admin@example.com"]
     viewer_id = env["ids"]["viewer@example.com"]
 
-    # The owner uploads a document.
     response = upload(owner)
     assert response.status_code == 201, response.text
     document_id = response.json()["id"]
 
-    # The owner grants edit permission to the viewer.
     grant = owner.put(
         f"/api/documents/{document_id}/grants",
         json={"user_id": viewer_id, "permission": "edit"},
     )
     assert grant.status_code == 200, grant.text
 
-    # The editor attempts to delete the owner's document.
     denied = viewer.delete(f"/api/documents/{document_id}")
     assert denied.status_code == 403
 
-    # Check that the denied attempt was recorded.
     events = admin.get("/api/admin/audit?outcome=denied").json()
     assert any(
         event["action"] == "document.delete"
@@ -273,7 +268,31 @@ def test_denied_delete_is_recorded_in_audit_trail(env):
         for event in events
     )
 
-    # The audit hash chain must remain valid.
     verification = admin.get("/api/admin/audit/verify")
     assert verification.status_code == 200
     assert verification.json()["valid"] is True
+
+
+def test_production_rejects_sqlite_database(tmp_path):
+    test_env = os.environ.copy()
+    test_env.update({
+        "ENVIRONMENT": "production",
+        "DATABASE_URL": "sqlite:///./production-test.db",
+        "STORAGE_DIR": str(tmp_path / "production_files"),
+        "AUDIT_HMAC_KEY": "test-audit-key-long-enough-for-production",
+        "SESSION_SECRET": "test-session-secret-long-enough-for-production",
+        "SESSION_COOKIE_SECURE": "true",
+        "BOOTSTRAP_ADMIN_PASSWORD": "Different-production-test-password-2026!",
+    })
+
+    result = subprocess.run(
+        [sys.executable, "-c", "import app.main"],
+        cwd=str(Path(__file__).resolve().parents[1]),
+        env=test_env,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+
+    assert result.returncode != 0
+    assert "Production requires PostgreSQL" in result.stderr
