@@ -1,3 +1,4 @@
+
 import hashlib
 from pathlib import Path
 
@@ -9,41 +10,55 @@ from sqlalchemy.pool import StaticPool
 
 from app.main import app, Base, User, Grant, AuditEvent, get_db, password_hash, verify_audit_chain
 
+
 @pytest.fixture()
 def env(tmp_path, monkeypatch):
     db_url = f"sqlite:///{tmp_path / 'test.db'}"
     engine = create_engine(db_url, connect_args={"check_same_thread": False})
     TestingSession = sessionmaker(bind=engine, autoflush=False, autocommit=False, expire_on_commit=False)
     Base.metadata.create_all(engine)
+
     def override_db():
         db = TestingSession()
-        try: yield db
-        finally: db.close()
+        try:
+            yield db
+        finally:
+            db.close()
+
     app.dependency_overrides[get_db] = override_db
+
     # Ensure test file storage is isolated from developer files.
     import app.main as main
     monkeypatch.setattr(main, "STORAGE_DIR", tmp_path / "files")
     main.STORAGE_DIR.mkdir(exist_ok=True)
+
     with TestingSession() as db:
         owner = User(email="owner@example.com", display_name="Owner", password_hash=password_hash.hash("Owner-password-2026!"), role="owner")
         viewer = User(email="viewer@example.com", display_name="Viewer", password_hash=password_hash.hash("Viewer-password-2026!"), role="viewer")
         other = User(email="other@example.com", display_name="Other", password_hash=password_hash.hash("Other-password-2026!"), role="owner")
         admin = User(email="admin@example.com", display_name="Admin", password_hash=password_hash.hash("Admin-password-2026!"), role="admin")
-        db.add_all([owner, viewer, other, admin]); db.commit()
+        db.add_all([owner, viewer, other, admin])
+        db.commit()
         ids = {u.email: u.id for u in [owner, viewer, other, admin]}
+
     clients = {name: TestClient(app) for name in ids}
     for name, client in clients.items():
         r = client.post("/api/auth/login", json={"email": name, "password": name.split('@')[0].capitalize()+"-password-2026!"})
         assert r.status_code == 200, r.text
+
     yield {"clients": clients, "ids": ids, "session": TestingSession, "engine": engine}
+
     app.dependency_overrides.clear()
     Base.metadata.drop_all(engine)
     engine.dispose()
 
 
 def upload(client, title="Confidential contract"):
-    return client.post("/api/documents", data={"title": title, "category": "Legal", "description": "private"},
-                       files={"file": ("contract.txt", b"only the intended user can read this", "text/plain")})
+    return client.post(
+        "/api/documents",
+        data={"title": title, "category": "Legal", "description": "private"},
+        files={"file": ("contract.txt", b"only the intended user can read this", "text/plain")},
+    )
 
 
 def test_unauthorized_user_cannot_list_or_download_private_document(env):
@@ -74,7 +89,7 @@ def test_read_grant_does_not_allow_edit_or_delete(env):
     viewer = env["clients"]["viewer@example.com"]
     doc = upload(owner).json()
     owner.put(f"/api/documents/{doc['id']}/grants", json={"user_id": env["ids"]["viewer@example.com"], "permission": "read"})
-    assert viewer.patch(f"/api/documents/{doc['id']}", json={"title":"Changed", "category":"Legal", "description":""}).status_code == 403
+    assert viewer.patch(f"/api/documents/{doc['id']}", json={"title": "Changed", "category": "Legal", "description": ""}).status_code == 403
     assert viewer.delete(f"/api/documents/{doc['id']}").status_code == 403
 
 
@@ -82,15 +97,15 @@ def test_non_owner_cannot_grant_access(env):
     owner = env["clients"]["owner@example.com"]
     other = env["clients"]["other@example.com"]
     doc = upload(owner).json()
-    response = other.put(f"/api/documents/{doc['id']}/grants", json={"user_id": env["ids"]["viewer@example.com"], "permission":"read"})
+    response = other.put(f"/api/documents/{doc['id']}/grants", json={"user_id": env["ids"]["viewer@example.com"], "permission": "read"})
     assert response.status_code == 403
 
 
 def test_upload_rejects_bad_extension_and_mismatched_pdf(env):
     owner = env["clients"]["owner@example.com"]
-    bad_ext = owner.post("/api/documents", data={"title":"bad", "category":"x"}, files={"file":("malware.exe", b"bad", "application/octet-stream")})
+    bad_ext = owner.post("/api/documents", data={"title": "bad", "category": "x"}, files={"file": ("malware.exe", b"bad", "application/octet-stream")})
     assert bad_ext.status_code == 415
-    bad_pdf = owner.post("/api/documents", data={"title":"bad", "category":"x"}, files={"file":("fake.pdf", b"not a pdf", "application/pdf")})
+    bad_pdf = owner.post("/api/documents", data={"title": "bad", "category": "x"}, files={"file": ("fake.pdf", b"not a pdf", "application/pdf")})
     assert bad_pdf.status_code == 415
 
 
@@ -117,8 +132,8 @@ def test_logout_revokes_session(env):
 
 def test_viewer_cannot_upload(env):
     viewer = env["clients"]["viewer@example.com"]
-    response = viewer.post("/api/documents", data={"title":"nope", "category":"private"},
-                           files={"file":("note.txt", b"not allowed", "text/plain")})
+    response = viewer.post("/api/documents", data={"title": "nope", "category": "private"},
+                           files={"file": ("note.txt", b"not allowed", "text/plain")})
     assert response.status_code == 403
 
 
@@ -131,6 +146,8 @@ def test_audit_chain_detects_modified_event(env):
         event.detail = "tampered after the fact"
         db.commit()
         assert verify_audit_chain(db) is False
+
+
 def test_unauthenticated_requests_are_rejected(env):
     client = TestClient(app)
 
@@ -141,7 +158,35 @@ def test_unauthenticated_requests_are_rejected(env):
     owner = env["clients"]["owner@example.com"]
     doc = upload(owner).json()
 
-    response = client.get(
-        f"/api/documents/{doc['id']}/download"
-    )
+    response = client.get(f"/api/documents/{doc['id']}/download")
     assert response.status_code == 401
+
+
+def test_edit_grant_allows_update_but_not_delete(env):
+    owner = env["clients"]["owner@example.com"]
+    viewer = env["clients"]["viewer@example.com"]
+    viewer_id = env["ids"]["viewer@example.com"]
+
+    response = upload(owner)
+    assert response.status_code == 201, response.text
+    document_id = response.json()["id"]
+
+    grant = owner.put(
+        f"/api/documents/{document_id}/grants",
+        json={"user_id": viewer_id, "permission": "edit"},
+    )
+    assert grant.status_code == 200, grant.text
+
+    update = viewer.patch(
+        f"/api/documents/{document_id}",
+        json={
+            "title": "Updated contract",
+            "category": "Legal",
+            "description": "Updated by an editor",
+        },
+    )
+    assert update.status_code == 200, update.text
+
+    # Editors may update metadata but cannot delete another user's document.
+    delete = viewer.delete(f"/api/documents/{document_id}")
+    assert delete.status_code == 403

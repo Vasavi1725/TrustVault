@@ -459,11 +459,38 @@ def update_document(document_id: int, body: DocumentUpdate, db: Session = Depend
     return document_json(doc, user)
 
 @app.delete("/api/documents/{document_id}")
-def delete_document(document_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    doc = get_document(db, document_id); require_edit(db, user, doc)
-    # Soft-delete preserves audit references; file is removed from active access immediately.
+def delete_document(
+    document_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    doc = get_document(db, document_id)
+
+    # Editing metadata does not grant permission to delete the document.
+    # Only its owner or an administrator may delete it.
+    if user.role != "admin" and doc.owner_id != user.id:
+        record_audit(
+            db,
+            actor=user,
+            action="document.delete",
+            document_id=doc.id,
+            outcome="denied",
+            detail="Only owner/admin can delete",
+        )
+        raise HTTPException(
+            status_code=403,
+            detail="Only the owner or administrator can delete this document",
+        )
+
+    # Soft-delete preserves audit references and removes active access.
     doc.deleted_at = utcnow()
-    record_audit(db, actor=user, action="document.delete", document_id=doc.id, detail="Soft deleted")
+    record_audit(
+        db,
+        actor=user,
+        action="document.delete",
+        document_id=doc.id,
+        detail="Soft deleted",
+    )
     return {"ok": True}
 
 @app.put("/api/documents/{document_id}/grants")
