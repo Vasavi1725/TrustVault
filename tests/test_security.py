@@ -43,7 +43,13 @@ def env(tmp_path, monkeypatch):
 
     clients = {name: TestClient(app) for name in ids}
     for name, client in clients.items():
-        r = client.post("/api/auth/login", json={"email": name, "password": name.split('@')[0].capitalize()+"-password-2026!"})
+        r = client.post(
+            "/api/auth/login",
+            json={
+                "email": name,
+                "password": name.split("@")[0].capitalize() + "-password-2026!",
+            },
+        )
         assert r.status_code == 200, r.text
 
     yield {"clients": clients, "ids": ids, "session": TestingSession, "engine": engine}
@@ -75,11 +81,17 @@ def test_unauthorized_user_cannot_list_or_download_private_document(env):
 def test_grant_and_revoke_takes_effect_immediately(env):
     owner = env["clients"]["owner@example.com"]
     viewer = env["clients"]["viewer@example.com"]
+    viewer_id = env["ids"]["viewer@example.com"]
     doc = upload(owner).json()
-    grant = owner.put(f"/api/documents/{doc['id']}/grants", json={"user_id": env["ids"]["viewer@example.com"], "permission": "read"})
+
+    grant = owner.put(
+        f"/api/documents/{doc['id']}/grants",
+        json={"user_id": viewer_id, "permission": "read"},
+    )
     assert grant.status_code == 200, grant.text
     assert viewer.get(f"/api/documents/{doc['id']}/download").status_code == 200
-    revoked = owner.delete(f"/api/documents/{doc['id']}/grants/{env['ids']['viewer@example.com']}")
+
+    revoked = owner.delete(f"/api/documents/{doc['id']}/grants/{viewer_id}")
     assert revoked.status_code == 200, revoked.text
     assert viewer.get(f"/api/documents/{doc['id']}/download").status_code == 403
 
@@ -88,8 +100,20 @@ def test_read_grant_does_not_allow_edit_or_delete(env):
     owner = env["clients"]["owner@example.com"]
     viewer = env["clients"]["viewer@example.com"]
     doc = upload(owner).json()
-    owner.put(f"/api/documents/{doc['id']}/grants", json={"user_id": env["ids"]["viewer@example.com"], "permission": "read"})
-    assert viewer.patch(f"/api/documents/{doc['id']}", json={"title": "Changed", "category": "Legal", "description": ""}).status_code == 403
+
+    grant = owner.put(
+        f"/api/documents/{doc['id']}/grants",
+        json={
+            "user_id": env["ids"]["viewer@example.com"],
+            "permission": "read",
+        },
+    )
+    assert grant.status_code == 200, grant.text
+
+    assert viewer.patch(
+        f"/api/documents/{doc['id']}",
+        json={"title": "Changed", "category": "Legal", "description": ""},
+    ).status_code == 403
     assert viewer.delete(f"/api/documents/{doc['id']}").status_code == 403
 
 
@@ -97,26 +121,48 @@ def test_non_owner_cannot_grant_access(env):
     owner = env["clients"]["owner@example.com"]
     other = env["clients"]["other@example.com"]
     doc = upload(owner).json()
-    response = other.put(f"/api/documents/{doc['id']}/grants", json={"user_id": env["ids"]["viewer@example.com"], "permission": "read"})
+
+    response = other.put(
+        f"/api/documents/{doc['id']}/grants",
+        json={
+            "user_id": env["ids"]["viewer@example.com"],
+            "permission": "read",
+        },
+    )
     assert response.status_code == 403
 
 
 def test_upload_rejects_bad_extension_and_mismatched_pdf(env):
     owner = env["clients"]["owner@example.com"]
-    bad_ext = owner.post("/api/documents", data={"title": "bad", "category": "x"}, files={"file": ("malware.exe", b"bad", "application/octet-stream")})
+
+    bad_ext = owner.post(
+        "/api/documents",
+        data={"title": "bad", "category": "x"},
+        files={"file": ("malware.exe", b"bad", "application/octet-stream")},
+    )
     assert bad_ext.status_code == 415
-    bad_pdf = owner.post("/api/documents", data={"title": "bad", "category": "x"}, files={"file": ("fake.pdf", b"not a pdf", "application/pdf")})
+
+    bad_pdf = owner.post(
+        "/api/documents",
+        data={"title": "bad", "category": "x"},
+        files={"file": ("fake.pdf", b"not a pdf", "application/pdf")},
+    )
     assert bad_pdf.status_code == 415
 
 
 def test_audit_records_denied_attempt_and_chain_verifies(env):
     owner = env["clients"]["owner@example.com"]
     viewer = env["clients"]["viewer@example.com"]
-    doc = upload(owner).json()
-    assert viewer.get(f"/api/documents/{doc['id']}/download").status_code == 403
     admin = env["clients"]["admin@example.com"]
+    doc = upload(owner).json()
+
+    assert viewer.get(f"/api/documents/{doc['id']}/download").status_code == 403
+
     events = admin.get("/api/admin/audit?outcome=denied").json()
-    assert any(e["action"] == "document.read" and e["document_id"] == doc["id"] for e in events)
+    assert any(
+        e["action"] == "document.read" and e["document_id"] == doc["id"]
+        for e in events
+    )
     assert admin.get("/api/admin/audit/verify").json()["valid"] is True
 
 
@@ -132,14 +178,18 @@ def test_logout_revokes_session(env):
 
 def test_viewer_cannot_upload(env):
     viewer = env["clients"]["viewer@example.com"]
-    response = viewer.post("/api/documents", data={"title": "nope", "category": "private"},
-                           files={"file": ("note.txt", b"not allowed", "text/plain")})
+    response = viewer.post(
+        "/api/documents",
+        data={"title": "nope", "category": "private"},
+        files={"file": ("note.txt", b"not allowed", "text/plain")},
+    )
     assert response.status_code == 403
 
 
 def test_audit_chain_detects_modified_event(env):
     owner = env["clients"]["owner@example.com"]
     assert upload(owner).status_code == 201
+
     with env["session"]() as db:
         event = db.scalar(select(AuditEvent).order_by(AuditEvent.id).limit(1))
         assert event is not None
@@ -187,6 +237,43 @@ def test_edit_grant_allows_update_but_not_delete(env):
     )
     assert update.status_code == 200, update.text
 
-    # Editors may update metadata but cannot delete another user's document.
+    # Editors can update details but cannot delete another user's document.
     delete = viewer.delete(f"/api/documents/{document_id}")
     assert delete.status_code == 403
+
+
+def test_denied_delete_is_recorded_in_audit_trail(env):
+    owner = env["clients"]["owner@example.com"]
+    viewer = env["clients"]["viewer@example.com"]
+    admin = env["clients"]["admin@example.com"]
+    viewer_id = env["ids"]["viewer@example.com"]
+
+    # The owner uploads a document.
+    response = upload(owner)
+    assert response.status_code == 201, response.text
+    document_id = response.json()["id"]
+
+    # The owner grants edit permission to the viewer.
+    grant = owner.put(
+        f"/api/documents/{document_id}/grants",
+        json={"user_id": viewer_id, "permission": "edit"},
+    )
+    assert grant.status_code == 200, grant.text
+
+    # The editor attempts to delete the owner's document.
+    denied = viewer.delete(f"/api/documents/{document_id}")
+    assert denied.status_code == 403
+
+    # Check that the denied attempt was recorded.
+    events = admin.get("/api/admin/audit?outcome=denied").json()
+    assert any(
+        event["action"] == "document.delete"
+        and event["document_id"] == document_id
+        and event["actor_email"] == "viewer@example.com"
+        for event in events
+    )
+
+    # The audit hash chain must remain valid.
+    verification = admin.get("/api/admin/audit/verify")
+    assert verification.status_code == 200
+    assert verification.json()["valid"] is True
