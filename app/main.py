@@ -200,20 +200,52 @@ def verify_audit_chain(db: Session) -> bool:
     return True
 
 
+
 def get_current_user(request: Request, db: Session = Depends(get_db)) -> User:
     token = request.session.get("session_token")
+
     if not token:
-        raise HTTPException(status_code=401, detail="Authentication required")
+        raise HTTPException(
+            status_code=401,
+            detail="Authentication required",
+        )
+
     token_hash = hashlib.sha256(token.encode()).hexdigest()
-    session = db.scalar(select(LoginSession).where(LoginSession.token_hash == token_hash))
-    if not session or session.revoked_at or session.expires_at < utcnow():
+    session = db.scalar(
+        select(LoginSession).where(LoginSession.token_hash == token_hash)
+    )
+
+    if not session or session.revoked_at:
         request.session.clear()
-        raise HTTPException(status_code=401, detail="Session expired or revoked")
+        raise HTTPException(
+            status_code=401,
+            detail="Session expired or revoked",
+        )
+
+    # Normalize the expiry timestamp to naive UTC, matching utcnow().
+    expires_at = session.expires_at
+
+    if expires_at.tzinfo is not None:
+        expires_at = expires_at.astimezone(timezone.utc).replace(tzinfo=None)
+
+    if expires_at <= utcnow():
+        request.session.clear()
+        raise HTTPException(
+            status_code=401,
+            detail="Session expired or revoked",
+        )
+
     user = db.get(User, session.user_id)
+
     if not user or not user.active:
         request.session.clear()
-        raise HTTPException(status_code=401, detail="Account inactive")
+        raise HTTPException(
+            status_code=401,
+            detail="Account inactive",
+        )
+
     return user
+
 
 class LoginSession(Base):
     __tablename__ = "login_sessions"
