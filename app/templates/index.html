@@ -82,6 +82,14 @@ async function api(url, options = {}) {
   return body;
 }
 
+function showLoggedOut(){
+  currentUser=null;
+  $('app').classList.add('hidden');
+  $('login').classList.remove('hidden');
+  const password=$('password');
+  if(password) password.value='';
+}
+
 function showLoggedIn(user){currentUser=user;$('login').classList.add('hidden');$('app').classList.remove('hidden');$('who').textContent=`${user.display_name} · ${user.role}`;$('uploadForm').closest('.card').classList.toggle('hidden',user.role==='viewer');$('adminPanel').classList.toggle('hidden',user.role!=='admin');$('userAdmin').classList.toggle('hidden',user.role!=='admin');loadDocs();if(user.role==='admin')loadAdmin()}
 $('loginForm').addEventListener('submit',async e=>{e.preventDefault();try{const u=await api('/api/auth/login',{method:'POST',body:JSON.stringify({email:$('email').value,password:$('password').value})});showLoggedIn(u);notice('Signed in successfully.')}catch(err){notice(err.message,true)}});
 $('logout').onclick=async()=>{try{await api('/api/auth/logout',{method:'POST'});}catch{}showLoggedOut();notice('Signed out. The server-side session has been revoked.');};
