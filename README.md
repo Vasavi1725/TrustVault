@@ -1,4 +1,4 @@
-# TrustVault — secure document sharing with a real audit trail
+﻿# TrustVault — secure document sharing with a real audit trail
 
 A small, security-first document platform built with **Python 3.12, FastAPI, SQLAlchemy, PostgreSQL (production) / SQLite (local), PBKDF2-HMAC-SHA256 password hashing, opaque server-side sessions, and an HMAC-chained audit log**. The web UI is intentionally lightweight and served by FastAPI.
 
@@ -60,15 +60,30 @@ The application creates its tables on startup. For a team/production deployment,
 
 ## Deployment with Docker / Render
 
-1. Create a managed PostgreSQL database.
-2. Create a persistent disk for private uploads (or replace it with private object storage).
-3. Deploy this repository as a Docker web service using `Dockerfile` / `render.yaml`.
-4. Set `DATABASE_URL`, `AUDIT_HMAC_KEY`, `SESSION_SECRET`, `BOOTSTRAP_ADMIN_PASSWORD`, `SESSION_COOKIE_SECURE=true`, and `STORAGE_DIR=/var/data/private_uploads` in the hosting dashboard. Use unique random secrets. Do not put them in Git.
-5. Confirm the service is served over HTTPS and `/health` returns `{"status":"ok"}`.
-6. Sign in, change the bootstrap admin password, create owner/viewer accounts, upload test documents, and verify all security cases against the **live** URL.
-7. Test from a private/incognito window and a second browser/device. Keep the repository private until the placement cell resolves the conflict between the email and the challenge's public-repository instruction.
+TrustVault is deployed on Render and uses PostgreSQL for production data and Supabase private object storage for uploaded document bytes.
 
-The Render starter configuration assumes a paid web service/disk and a separately provisioned PostgreSQL database; plans/pricing can change. Local disk is not appropriate for ephemeral production containers. Do not deploy until the persistent storage and secrets are configured.
+1. Deploy the repository as a Docker web service using `Dockerfile` / `render.yaml`, and provision a managed PostgreSQL database.
+2. Configure these environment variables in the Render dashboard:
+   - `DATABASE_URL` — the managed PostgreSQL connection URL.
+   - `AUDIT_HMAC_KEY` — a unique, randomly generated secret used to authenticate audit events.
+   - `SESSION_SECRET` — a separate unique, randomly generated session secret.
+   - `BOOTSTRAP_ADMIN_EMAIL` and `BOOTSTRAP_ADMIN_PASSWORD` — the initial administrator account settings.
+   - `SESSION_COOKIE_SECURE=true` — require secure cookies over HTTPS.
+   - `STORAGE_BACKEND=supabase`
+   - `SUPABASE_URL` — your Supabase project URL.
+   - `SUPABASE_SERVICE_ROLE_KEY` — the service-role secret; keep it only in server-side environment variables and never commit or expose it.
+   - `SUPABASE_BUCKET=trustvault-documents` — the private bucket used for document storage.
+3. In Supabase, create the `trustvault-documents` bucket and keep it private. Configure upload limits and allowed file types to match the application.
+4. Confirm the Render service uses HTTPS and `/health` returns `{"status":"ok"}`.
+5. Sign in as the administrator, use strong unique passwords, create owner/viewer accounts, and upload a harmless test document.
+6. Verify upload and download, grant/revoke permissions, denied access, content-integrity checks, and the audit-chain verification against the live URL.
+7. Test with a separate Viewer session and confirm that revoking a grant blocks access on the server, including direct download requests.
+
+Do not commit `.env` files, database passwords, Supabase service-role keys, session secrets, or audit keys. Use separate random values for `SESSION_SECRET` and `AUDIT_HMAC_KEY`.
+
+Supabase object storage is used for uploaded file bytes so they do not depend on an ephemeral Render filesystem. Database backups, storage retention, migrations, and production recovery should be planned separately. The application currently creates tables on startup; use controlled database migrations for a mature production deployment.
+
+Live application: https://trustvault-904r.onrender.com
 
 ## API documentation
 
