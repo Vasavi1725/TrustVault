@@ -18,7 +18,9 @@ from app.main import (
     get_db,
     password_hash,
     verify_audit_chain,
+    audit_payload,
 )
+
 
 
 @pytest.fixture()
@@ -416,3 +418,26 @@ def test_production_rejects_sqlite_database():
     assert "Production requires PostgreSQL" in (
         result.stdout + result.stderr
     )
+def test_audit_payload_normalizes_utc_timestamps():
+    from datetime import datetime, timezone
+
+    timestamp = datetime(
+        2026, 10, 21, 9, 27, 50, 887291
+    )
+    aware_timestamp = timestamp.replace(tzinfo=timezone.utc)
+
+    common = {
+        "actor_id": 1,
+        "actor_email": "test@example.com",
+        "action": "test",
+        "document_id": None,
+        "target_user_id": None,
+        "outcome": "success",
+        "detail": "",
+        "previous_hash": "0" * 64,
+    }
+
+    naive_payload = audit_payload(at=timestamp, **common)
+    aware_payload = audit_payload(at=aware_timestamp, **common)
+
+    assert naive_payload == aware_payload

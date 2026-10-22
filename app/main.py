@@ -154,11 +154,39 @@ def get_db():
         db.close()
 
 
-def audit_payload(*, at, actor_id, actor_email, action, document_id, target_user_id, outcome, detail, previous_hash):
-    return json.dumps({"at": at.isoformat(), "actor_id": actor_id, "actor_email": actor_email,
-                       "action": action, "document_id": document_id, "target_user_id": target_user_id,
-                       "outcome": outcome, "detail": detail, "previous_hash": previous_hash},
-                      sort_keys=True, separators=(",", ":"))
+
+def audit_payload(
+    *,
+    at,
+    actor_id,
+    actor_email,
+    action,
+    document_id,
+    target_user_id,
+    outcome,
+    detail,
+    previous_hash,
+):
+    # Normalize timestamps to naive UTC so the HMAC payload is
+    # consistent whether the database returns a naive or aware datetime.
+    if at.tzinfo is not None:
+        at = at.astimezone(timezone.utc).replace(tzinfo=None)
+
+    return json.dumps(
+        {
+            "at": at.isoformat(),
+            "actor_id": actor_id,
+            "actor_email": actor_email,
+            "action": action,
+            "document_id": document_id,
+            "target_user_id": target_user_id,
+            "outcome": outcome,
+            "detail": detail,
+            "previous_hash": previous_hash,
+        },
+        sort_keys=True,
+        separators=(",", ":"),
+    )
 
 
 def record_audit(db: Session, *, actor: Optional[User], action: str, document_id: Optional[int] = None,
