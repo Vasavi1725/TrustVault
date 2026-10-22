@@ -21,7 +21,7 @@
 - **What was wrong:** The current build environment could not install new packages because package-index networking was unavailable, so the implementation could not be imported and tested there. This did not mean Argon2 was unsafe; it was a dependency/verification problem.
 - **What I did instead:** Replaced that dependency with Python's standard-library PBKDF2-HMAC-SHA256, a unique random salt, and 600,000 iterations; updated requirements and docs. Argon2id remains a reasonable future upgrade after deployment benchmarking.
 - **Verification (current regression run, 2026-10-21):** The complete local test suite passed: 15 passed, 3 deprecation warnings. This current result does not establish the exact verification date of the original implementation.
-- **Commit:** Pending: identify the matching historical commit before adding a GitHub commit URL.
+- **Related implementation commit:** [`5ca3380`](https://github.com/Vasavi1725/TrustVault/commit/5ca3380) — initial application implementation; this is not a password-hashing-only commit.
 
 ## Entry 3 — 2026-10-19 — Authorization: viewer upload
 
@@ -29,7 +29,7 @@
 - **What the AI review found:** The first upload route allowed any authenticated user to upload even though the intended policy was that Viewer is read-only.
 - **What I did:** Restricted upload to `owner` and `admin` in the backend and hid the upload form for viewers as a usability measure. The backend dependency is the actual security control; the UI is not.
 - **Verification (current test suite, 2026-10-21):** `test_viewer_cannot_upload` exists. The full suite passed: 15 passed, 3 warnings.
-- **Commit:** Pending: identify the matching historical commit before adding a GitHub commit URL.
+- **Related implementation commit:** [`5ca3380`](https://github.com/Vasavi1725/TrustVault/commit/5ca3380) — initial application implementation, including role and upload routes.
 
 ## Entry 4 — 2026-10-19 — Audit integrity and atomicity
 
@@ -38,7 +38,7 @@
 - **What was wrong:** Separate commits create a crash window where a document operation may succeed without its audit event. A chain stored only in one database also cannot independently prove that the tail was truncated.
 - **What I did:** Added SQLite/PostgreSQL triggers against audit-row update/delete, a PostgreSQL advisory lock for serializing chain appends, and changed key mutation handlers so the business change and audit insert are committed by the same audit commit. Documented the remaining superuser/tail-truncation limitation and the need for external immutable checkpoints.
 - **Verification (current test suite, 2026-10-21):** `test_audit_chain_detects_modified_event` exists. The full suite passed: 15 passed, 3 warnings.
-- **Commit:** Pending: identify the matching historical commit before adding a GitHub commit URL.
+- **Related commits:** [`5ca3380`](https://github.com/Vasavi1725/TrustVault/commit/5ca3380) — initial audit implementation; [`56204f6`](https://github.com/Vasavi1725/TrustVault/commit/56204f6) — audit timestamp normalization and verification tests.
 
 ## Entry 5 — 2026-10-19 — Upload validation and file integrity
 
@@ -46,7 +46,7 @@
 - **What the AI review found:** Client-provided filenames and MIME types cannot be trusted; a file extension alone does not prove file type. An early implementation also mutated a shared allowed-type set while choosing a response content type.
 - **What I did:** Use a server-generated UUID for storage names, allow-list extensions, enforce size limits, check PDF/image signatures and UTF-8 for text/CSV, and store SHA-256 for verification before download. The content-type set mutation was removed.
 - **Remaining issue:** Signature checks are not full malware scanning or complete format validation. This is explicitly accepted in `THREATS.md` rather than presented as solved.
-- **Commit:** Pending: identify the matching historical commit before adding a GitHub commit URL.
+- **Related commits:** [`5ca3380`](https://github.com/Vasavi1725/TrustVault/commit/5ca3380) — initial upload implementation; [`9367b64`](https://github.com/Vasavi1725/TrustVault/commit/9367b64) — Supabase storage and download-integrity checks.
 
 ## Future entries — fill in during real work
 
@@ -58,7 +58,7 @@ For every later AI-assisted change, record the date, the actual prompt (or a fai
 - **What the AI helped with:** Updated the security test suite to cover security-relevant behavior, including inactive-user sessions, grant permissions, document updates/deletion, and upload validation.
 - **What I verified:** Ran `.\.venv\Scripts\python.exe -m pytest -q` locally. Result: **15 passed, 3 warnings**. The warnings were deprecation notices, not test failures.
 - **Review note:** Passing tests provide evidence for the tested cases only; they do not prove that the entire application is secure.
-- **Commit:** [`fa050e2`](https://github.com/Vasavi1725/TrustVault/commit/fa050e2) — Expand document security and authorization tests. This commit is local and still needs to be pushed.
+- **Commit:** [`fa050e2`](https://github.com/Vasavi1725/TrustVault/commit/fa050e2) — Expand document security and authorization tests. This commit is included in the pushed main history.
 
 
 ## Entry 7 — 2026-10-22 — Supabase document storage
@@ -66,6 +66,6 @@ For every later AI-assisted change, record the date, the actual prompt (or a fai
 - **Prompt / request:** Add private Supabase object storage to address document files being unavailable when the hosting filesystem does not persist files across restarts or deployments.
 - **What the AI helped with:** Added a configurable local/Supabase storage backend, server-side Supabase client configuration, upload/download handling, cleanup after database-side upload failures, and download integrity verification.
 - **Security checks:** Keep the bucket private; authorize document reads before fetching file bytes; verify downloaded content against the stored SHA-256 hash; return a service-unavailable response when storage upload fails.
-- **What I verified:** Ran `.\.venv\Scripts\python.exe -m pytest -q` locally on 2026-10-22. Result: **19 passed, 3 warnings**. Added fake-client tests for upload/download access control, tampered content, and upload failure.
-- **Limitation:** These tests use a fake Supabase client. Live Supabase storage and the production deployment still need to be verified. Existing files missing from the old hosting filesystem cannot be recovered by this integration.
-- **Commit:** Pending; add the actual commit URL after committing and pushing this change.
+- **What I verified locally:** Ran `.\.venv\Scripts\python.exe -m pytest -q` on 2026-10-22. Result: **19 passed, 3 warnings**. Fake-client tests cover upload/download access control, tampered content, and upload failure.
+- **Live verification performed:** On the deployed application, uploaded a test text document, confirmed it appeared for a viewer after granting Read access, downloaded it successfully, and revoked access. The viewer no longer saw the document after revocation. A direct API download attempt after revocation has not yet been verified.
+- **Implementation commit:** [`9367b64`](https://github.com/Vasavi1725/TrustVault/commit/9367b64) — Supabase storage with integrity and access checks. The deployment README update is [`e73a440`](https://github.com/Vasavi1725/TrustVault/commit/e73a440).
