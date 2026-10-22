@@ -59,3 +59,13 @@ For every later AI-assisted change, record the date, the actual prompt (or a fai
 - **What I verified:** Ran `.\.venv\Scripts\python.exe -m pytest -q` locally. Result: **15 passed, 3 warnings**. The warnings were deprecation notices, not test failures.
 - **Review note:** Passing tests provide evidence for the tested cases only; they do not prove that the entire application is secure.
 - **Commit:** [`fa050e2`](https://github.com/Vasavi1725/TrustVault/commit/fa050e2) — Expand document security and authorization tests. This commit is local and still needs to be pushed.
+
+
+## Entry 7 — 2026-10-22 — Supabase document storage
+
+- **Prompt / request:** Add private Supabase object storage to address document files being unavailable when the hosting filesystem does not persist files across restarts or deployments.
+- **What the AI helped with:** Added a configurable local/Supabase storage backend, server-side Supabase client configuration, upload/download handling, cleanup after database-side upload failures, and download integrity verification.
+- **Security checks:** Keep the bucket private; authorize document reads before fetching file bytes; verify downloaded content against the stored SHA-256 hash; return a service-unavailable response when storage upload fails.
+- **What I verified:** Ran `.\.venv\Scripts\python.exe -m pytest -q` locally on 2026-10-22. Result: **19 passed, 3 warnings**. Added fake-client tests for upload/download access control, tampered content, and upload failure.
+- **Limitation:** These tests use a fake Supabase client. Live Supabase storage and the production deployment still need to be verified. Existing files missing from the old hosting filesystem cannot be recovered by this integration.
+- **Commit:** Pending; add the actual commit URL after committing and pushing this change.

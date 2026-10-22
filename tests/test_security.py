@@ -441,3 +441,125 @@ def test_audit_payload_normalizes_utc_timestamps():
     aware_payload = audit_payload(at=aware_timestamp, **common)
 
     assert naive_payload == aware_payload
+
+class FakeSupabaseBucket:
+    def __init__(self):
+        self.files = {}
+        self.download_calls = 0
+
+    def upload(self, path, file, file_options=None):
+        self.files[path] = bytes(file)
+        return {"Key": path}
+
+    def download(self, path, options=None, query_params=None):
+        self.download_calls += 1
+        if path not in self.files:
+            raise Exception("Object not found (404)")
+        return self.files[path]
+
+    def remove(self, paths):
+        for path in paths:
+            self.files.pop(path, None)
+        return []
+
+
+class FakeSupabaseStorage:
+    def __init__(self, bucket):
+        self.bucket = bucket
+
+    def from_(self, bucket_name):
+        assert bucket_name == "trustvault-documents"
+        return self.bucket
+
+
+class FakeSupabaseClient:
+    def __init__(self, bucket):
+        self.storage = FakeSupabaseStorage(bucket)
+
+
+def test_supabase_upload_download_and_access_control(env, monkeypatch):
+    import app.main as main
+
+    bucket = FakeSupabaseBucket()
+    monkeypatch.setattr(main, "STORAGE_BACKEND", "supabase")
+    monkeypatch.setattr(
+        main, "supabase_client", FakeSupabaseClient(bucket)
+    )
+
+    owner = env["clients"]["owner@example.com"]
+    viewer = env["clients"]["viewer@example.com"]
+
+    # Owner uploads a document to fake Supabase storage.
+    response = upload(owner)
+    assert response.status_code == 201, response.text
+    doc = response.json()
+    assert len(bucket.files) == 1
+
+    # An unauthorized viewer must not trigger a storage download.
+    denied = viewer.get(
+        f"/api/documents/{doc['id']}/download"
+    )
+    assert denied.status_code == 403
+    assert bucket.download_calls == 0
+
+    # The owner can download the original, verified bytes.
+    downloaded = owner.get(
+        f"/api/documents/{doc['id']}/download"
+    )
+    assert downloaded.status_code == 200, downloaded.text
+    assert downloaded.content == b"only the intended user can read this"
+    assert bucket.download_calls == 1
+
+
+def test_supabase_download_rejects_tampered_content(env, monkeypatch):
+    import app.main as main
+
+    bucket = FakeSupabaseBucket()
+    monkeypatch.setattr(main, "STORAGE_BACKEND", "supabase")
+    monkeypatch.setattr(
+        main, "supabase_client", FakeSupabaseClient(bucket)
+    )
+
+    owner = env["clients"]["owner@example.com"]
+    response = upload(owner)
+    assert response.status_code == 201, response.text
+
+    # Simulate a stored file being changed after upload.
+    stored_path = next(iter(bucket.files))
+    bucket.files[stored_path] = b"tampered document contents"
+
+    downloaded = owner.get(
+        f"/api/documents/{response.json()['id']}/download"
+    )
+    assert downloaded.status_code == 500
+    assert downloaded.json()["detail"] == "File integrity check failed"
+
+def test_supabase_upload_failure_returns_service_unavailable(env, monkeypatch):
+    import app.main as main
+
+    class FailingBucket:
+        def upload(self, path, file, file_options=None):
+            raise RuntimeError("Simulated storage outage")
+
+    monkeypatch.setattr(main, "STORAGE_BACKEND", "supabase")
+    monkeypatch.setattr(
+        main,
+        "supabase_client",
+        FakeSupabaseClient(FailingBucket()),
+    )
+
+    owner = env["clients"]["owner@example.com"]
+    response = upload(owner)
+
+    assert response.status_code == 503
+    assert response.json()["detail"] == (
+        "Document storage service unavailable"
+    )
+
+    # A failed storage upload must not create a document record.
+    documents = owner.get("/api/documents")
+    assert documents.status_code == 200
+    assert not any(
+        doc["title"] == "Confidential contract"
+        for doc in documents.json()
+    )
