@@ -10,8 +10,7 @@ This document describes the threat model for the current implementation. Update 
 - Audit events used to investigate access.
 - HMAC key, session signing secret, database credentials, and deployment secrets.
 
-The browser is untrusted. All client-supplied IDs, filenames, MIME types, roles, and permission choices are untrusted. The API and database enforce access. The storage directory is private and files are addressed by server-generated names.
-
+The browser is untrusted. All client-supplied IDs, filenames, MIME types, roles, and permission choices are untrusted. The API and database enforce access. In production, uploaded objects are stored in a private Supabase bucket and accessed through the authorized API; local development can use private local storage. Files use server-generated storage names. Production storage must remain private and must not expose public object URLs.
 ## Permission model
 
 - Admin: operational access to all active documents and audit views; can create users and manage grants.
