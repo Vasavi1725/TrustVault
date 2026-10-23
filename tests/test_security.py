@@ -148,6 +148,7 @@ def test_unauthorized_user_cannot_list_or_download_private_document(env):
 def test_grant_and_revoke_takes_effect_immediately(env):
     owner = env["clients"]["owner@example.com"]
     viewer = env["clients"]["viewer@example.com"]
+    admin = env["clients"]["admin@example.com"]
     viewer_id = env["ids"]["viewer@example.com"]
 
     response = upload(owner)
@@ -160,19 +161,37 @@ def test_grant_and_revoke_takes_effect_immediately(env):
     )
     assert grant.status_code == 200, grant.text
 
-    assert viewer.get(
+    allowed = viewer.get(
         f"/api/documents/{doc['id']}/download"
-    ).status_code == 200
+    )
+    assert allowed.status_code == 200
 
     revoked = owner.delete(
         f"/api/documents/{doc['id']}/grants/{viewer_id}"
     )
     assert revoked.status_code == 200, revoked.text
 
-    assert viewer.get(
+    denied = viewer.get(
         f"/api/documents/{doc['id']}/download"
-    ).status_code == 403
+    )
+    assert denied.status_code == 403
 
+    events_response = admin.get(
+        "/api/admin/audit?outcome=denied"
+    )
+    assert events_response.status_code == 200, events_response.text
+
+    assert any(
+        event["action"] == "document.read"
+        and event["document_id"] == doc["id"]
+        and event["actor_email"] == "viewer@example.com"
+        and event["outcome"] == "denied"
+        for event in events_response.json()
+    )
+
+    verification = admin.get("/api/admin/audit/verify")
+    assert verification.status_code == 200, verification.text
+    assert verification.json()["valid"] is True
 
 def test_read_grant_cannot_edit_or_delete(env):
     owner = env["clients"]["owner@example.com"]
