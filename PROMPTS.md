@@ -69,3 +69,12 @@ For every later AI-assisted change, record the date, the actual prompt (or a fai
 - **What I verified locally:** Ran `.\.venv\Scripts\python.exe -m pytest -q` on 2026-10-22. Result: **19 passed, 3 warnings**. Fake-client tests cover upload/download access control, tampered content, and upload failure.
 - **Live verification performed:** On the deployed application, uploaded a test text document, confirmed it appeared for a viewer after granting Read access, downloaded it successfully, and revoked access. The viewer no longer saw the document after revocation. A direct API download attempt after revocation has not yet been verified.
 - **Implementation commit:** [`9367b64`](https://github.com/Vasavi1725/TrustVault/commit/9367b64) — Supabase storage with integrity and access checks. The deployment README update is [`e73a440`](https://github.com/Vasavi1725/TrustVault/commit/e73a440).
+
+## Entry 8 — 2026-10-23 — User-directory authorization
+
+- **Prompt / request:** Review authenticated endpoints for user information that could be exposed to users without an administrative or ownership role.
+- **What the AI helped identify:** The `/api/users` endpoint needed a backend role restriction so ordinary viewers could not enumerate active user accounts.
+- **What I changed:** Restricted `/api/users` to the `owner` and `admin` roles and added `test_user_list_requires_owner_or_admin` in `tests/test_security.py`.
+- **Verification:** The new regression test passed. The complete local suite passed with **20 passed, 3 warnings**. The warnings were existing deprecation warnings.
+- **Live verification limitation:** The live viewer-denial response for `/api/users` still needs direct verification. Do not claim that this live check passed until the response has been observed.
+- **Related implementation commit:** [19a01df](https://github.com/Vasavi1725/TrustVault/commit/19a01df) — Restrict user directory to owners and admins.
