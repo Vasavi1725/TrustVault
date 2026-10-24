@@ -1,15 +1,15 @@
-﻿# TrustVault — secure document sharing with a real audit trail
+# TrustVault — secure document sharing with a real audit trail
 
 A small, security-first document platform built with **Python 3.12, FastAPI, SQLAlchemy, PostgreSQL (production) / SQLite (local), PBKDF2-HMAC-SHA256 password hashing, opaque server-side sessions, and an HMAC-chained audit log**. The web UI is intentionally lightweight and served by FastAPI.
 
-> **Challenge note:** This is a working starter implementation, not a claim of independent security certification. Read `THREATS.md`, run the tests, and fix/record any issue you find before submission. Do not submit generated code without understanding and verifying it.
+> **Challenge note:** This is a security-focused prototype, not independently security-certified. Read `THREATS.md`, run the tests, and fix/record any issue you find before submission. Do not submit generated code without understanding and verifying it.
 
 ## Role model
 
 - **Administrator:** view all active documents, inspect activity and permission changes, verify the audit chain, and create users. The admin can manage any document's grants.
 - **Document Owner:** upload documents; read, download, update, and soft-delete their own documents; grant/revoke `read` or `edit` access to named users.
 - **Viewer:** read/download only documents explicitly shared with them. A read grant does not allow editing or deleting. Viewers cannot upload or share.
-- **Edit grant:** permits reading, downloading, editing metadata, and deleting the shared document. It does not transfer ownership or permit further sharing.
+- **Edit grant:** permits reading, downloading, and editing metadata on the shared document. It does not permit deletion, transfer ownership, or further sharing.
 - **Default:** no grant means no access. There is no folder inheritance or public sharing.
 
 The backend is authoritative. Hiding a button in the UI is not an authorization check. Every document endpoint checks access on the server.
@@ -101,16 +101,15 @@ This detects content edits, interior deletions/reordering, and tampering without
 - RAG is deliberately deferred until authorization tests pass. If added, filter by current user permissions **before retrieval**, re-check grants on every query, and treat document text as untrusted prompt-injection content.
 - A full enterprise retention/legal hold workflow and external immutable audit sink remain future work and are disclosed in `THREATS.md`.
 
-## Submission checklist
+## Project status and known limitations
 
-- [ ] Public Git repository when permitted by the challenge rules; commits across the week.
-- [ ] Live URL, seed data, and three role credentials.
-- [ ] `THREATS.md` updated with actual tests/results and accepted risks.
-- [ ] `PROMPTS.md` with at least five real dated entries and actual commit links; at least two about authorization/audit.
-- [ ] Tests pass from a clean clone.
-- [ ] Database schema/setup and deployment instructions verified.
-- [ ] Five-minute demo video recorded.
-- [ ] Short write-up completed honestly, including unfinished items.
+- **Source code:** Public repository with implementation history available in Git.
+- **Deployment:** Live application: https://trustvault-904r.onrender.com
+- **Security documentation:** See `THREATS.md` for threat scenarios, verification status, and accepted risks.
+- **AI-use record:** See `PROMPTS.md` for dated entries describing AI assistance and implementation work.
+- **Automated tests:** The latest recorded local run passed 20 tests, with 3 warnings. Re-run the tests before relying on this result.
+- **Authorization:** User-directory access is restricted to owners and administrators. Document deletion is restricted to the document owner or an administrator.
+- **Known limitations:** External immutable audit archival and enterprise retention/legal hold remain future work. See `THREATS.md`. This prototype is not independently security-certified.
 
 ## Seed challenge demo data
 

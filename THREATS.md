@@ -1,4 +1,4 @@
-# THREATS.md — TrustVault security analysis
+# THREATS.md - TrustVault security analysis
 
 This document describes the threat model for the current implementation. Update it with the actual result of every deployed test. A passing local test is not proof that the live service is safe.
 
@@ -50,7 +50,7 @@ The browser is untrusted. All client-supplied IDs, filenames, MIME types, roles,
 | T24 | Public URL or static mount exposes file bytes | Private upload directory is not mounted as static content; downloads go through authorized API | Verify storage paths cannot be fetched directly | Deployment must not add a public static mapping or public object ACL |
 | T25 | Admin misuse | Admin actions are audited; admin role can be reviewed in activity view | Manual role audit | Separation of duties and approval workflow are not implemented |
 | T26 | Malicious prompt injection in a future RAG feature | RAG is not in this MVP; if added, permission filter must run before retrieval and retrieved text remains untrusted data | No RAG code exists yet | Do not ship RAG until access-filtered retrieval and adversarial tests pass |
-| T27 | Viewer enumerates active user accounts through `/api/users` | Endpoint requires the `owner` or `admin` role | `test_user_list_requires_owner_or_admin` passes locally; live viewer-denial response still needs direct verification | User email addresses remain visible to authorized owners/admins for sharing |
+| T27 | Viewer enumerates active user accounts through `/api/users` | Endpoint requires the `owner` or `admin` role | `test_user_list_requires_owner_or_admin` passes locally; manually verified on the deployed app: a Viewer received `{"detail":"Insufficient role"}` from `/api/users` | User email addresses remain visible to authorized owners/admins for sharing |
 
 ## Audit integrity limitations (be precise in the demo)
 
