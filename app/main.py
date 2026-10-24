@@ -453,7 +453,7 @@ def create_user(body: UserCreate, db: Session = Depends(get_db), admin: User = D
     return {"id": user.id, "email": user.email, "display_name": user.display_name, "role": user.role}
 
 @app.get("/api/users")
-def list_users(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+def list_users(db: Session = Depends(get_db), user: User = Depends(require_role("owner", "admin"))):
     # Names/emails are exposed to authenticated users to allow named grants; no password fields are returned.
     return [{"id": u.id, "email": u.email, "display_name": u.display_name, "role": u.role}
             for u in db.scalars(select(User).where(User.active.is_(True)).order_by(User.display_name)).all()]

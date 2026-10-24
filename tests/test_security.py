@@ -292,6 +292,21 @@ def test_viewer_cannot_open_admin_audit(env):
     viewer = env["clients"]["viewer@example.com"]
     assert viewer.get("/api/admin/audit").status_code == 403
 
+def test_user_list_requires_owner_or_admin(env):
+    viewer = env["clients"]["viewer@example.com"]
+    owner = env["clients"]["owner@example.com"]
+    admin = env["clients"]["admin@example.com"]
+
+    # Viewers must not enumerate users.
+    assert viewer.get("/api/users").status_code == 403
+
+    # Owners and admins need the list for document sharing.
+    for client in (owner, admin):
+        response = client.get("/api/users")
+        assert response.status_code == 200
+        users = response.json()
+        assert any(u["email"] == "viewer@example.com" for u in users)
+
 
 def test_logout_revokes_session(env):
     client = env["clients"]["viewer@example.com"]
